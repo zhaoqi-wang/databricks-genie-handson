@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Databricks Genie ハンズオン 手順書（学生用）</title>
+<style>
+body { font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
+       max-width: 860px; margin: 2rem auto; padding: 0 1.2rem; line-height: 1.7; color: #1b1b1b; }
+h1 { font-size: 1.6rem; border-bottom: 3px solid #ff3621; padding-bottom: .3rem; }
+h2 { font-size: 1.3rem; border-left: 6px solid #ff3621; padding-left: .5rem; margin-top: 2.2rem; }
+h3 { font-size: 1.1rem; margin-top: 1.5rem; }
+table { border-collapse: collapse; width: 100%; margin: .8rem 0; font-size: .95rem; }
+th, td { border: 1px solid #c8c8c8; padding: .4rem .6rem; vertical-align: top; text-align: left; }
+th { background: #f3f3f3; }
+code { font-family: "SF Mono", Menlo, Consolas, monospace; background: #f4f4f4; padding: .1rem .3rem; border-radius: 3px; font-size: .9em; }
+pre { background: #f7f7f7; border: 1px solid #ddd; border-radius: 4px; padding: .8rem; overflow-x: auto; line-height: 1.45; }
+pre code { background: none; padding: 0; }
+blockquote { border-left: 4px solid #f0a020; background: #fff8ec; margin: 1rem 0; padding: .4rem 1rem; }
+ul.task { list-style: none; padding-left: 1rem; }
+hr { border: none; border-top: 1px solid #ddd; margin: 2rem 0; }
+@media print { body { margin: 0; max-width: none; } pre, table, blockquote { page-break-inside: avoid; } h2 { page-break-after: avoid; } }
+</style>
+</head>
+<body>
+<h1>Databricks Genie ハンズオン 手順書（学生用）</h1>
+<p><strong>所要時間：60分</strong>　／　<strong>テーマ：アンケートで答えたことと、ログに残った実際の行動は一致するか？</strong></p>
+<p><strong>環境：各自の Databricks Free Edition</strong>（データの準備から分析まで、すべて自分のワークスペースで行います）</p>
+<hr />
+<h2>事前準備（授業前に必ず）</h2>
+<p>当日は時間が限られているので、次の2つは授業の前に済ませておいてください。</p>
+<ol>
+<li><strong>Databricks Free Edition のアカウントを作り、ログインできることを確認します。</strong><ul>
+<li>サインイン方法は「メール（ワンタイムコード）」「Google でサインイン」「Microsoft でサインイン」から選べます。</li>
+<li>ログイン後、ワークスペースのトップ画面が開けば準備完了です。</li>
+</ul>
+</li>
+<li><strong>配布ファイルをダウンロードし、すぐに開ける場所に置いておきます。</strong></li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>ファイル</th>
+<th>使う場面</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>survey.csv</code></td>
+<td>Step1 でアップロード（事後アンケート）</td>
+</tr>
+<tr>
+<td><code>participants.csv</code></td>
+<td>Step1 でアップロード（参加者の属性）</td>
+</tr>
+<tr>
+<td><code>usage_logs.csv</code></td>
+<td>Step1 でアップロード（操作ログ）</td>
+</tr>
+<tr>
+<td><code>01_check_tables.sql</code></td>
+<td>Step1 の確認用SQL</td>
+</tr>
+<tr>
+<td><code>02_ai_decide.sql</code></td>
+<td>Step2 で実行するSQL</td>
+</tr>
+<tr>
+<td><code>Genie設定メモ.pdf</code></td>
+<td>Step3 で Genie Code に添付するメモ</td>
+</tr>
+<tr>
+<td><code>Genie設定メモ.docx</code></td>
+<td>メモの編集用の元ファイル（任意）</td>
+</tr>
+<tr>
+<td><code>survey_enriched_backup.csv</code></td>
+<td>予備データ（講師から指示があったときだけ使う）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>0. 背景設定（0–5分）</h2>
+<p>とある製造業の R&amp;D 部門が、社内ナレッジ共有ツールに <strong>AI 推薦機能</strong> を試験導入しました。
+社員200名が <strong>AIあり群／AIなし群</strong> に分かれて4週間ツールを使い、最後に事後アンケートに回答しています。</p>
+<p>R&amp;D 部門が知りたいこと：</p>
+<ul>
+<li>AI 推薦機能で満足度は上がったか？</li>
+<li>アンケートで「よく使った」と答えた人は、本当に使っていたのか？</li>
+<li>自由記述がポジティブな人ほど、AI 推薦を活用していたか？</li>
+</ul>
+<h3>使うデータ</h3>
+<p>すべて自分のワークスペースの <strong><code>workspace.genie_handson</code></strong> スキーマに作ります。</p>
+<table>
+<thead>
+<tr>
+<th>テーブル</th>
+<th>元ファイル</th>
+<th>行数</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>survey</code></td>
+<td><code>survey.csv</code></td>
+<td>200</td>
+<td>事後アンケート（5問＋自由記述）</td>
+</tr>
+<tr>
+<td><code>participants</code></td>
+<td><code>participants.csv</code></td>
+<td>200</td>
+<td>参加者の属性と実験群</td>
+</tr>
+<tr>
+<td><code>usage_logs</code></td>
+<td><code>usage_logs.csv</code></td>
+<td>10,000</td>
+<td>4週間の操作ログ</td>
+</tr>
+</tbody>
+</table>
+<p>期間：2026-10-05〜2026-10-30 の平日（4週間）。結合キーはすべて <code>user_id</code> です。</p>
+<h3>各テーブルのカラム</h3>
+<p><strong>survey（survey.csv）</strong>：Q1〜Q4 は5段階（1＝低い〜5＝高い）です。</p>
+<table>
+<thead>
+<tr>
+<th>カラム</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>user_id</code></td>
+<td>参加者ID</td>
+</tr>
+<tr>
+<td><code>q1_satisfaction</code></td>
+<td>Q1 満足度</td>
+</tr>
+<tr>
+<td><code>q2_ease_of_use</code></td>
+<td>Q2 使いやすさ</td>
+</tr>
+<tr>
+<td><code>q3_usefulness</code></td>
+<td>Q3 業務に役立った</td>
+</tr>
+<tr>
+<td><code>q4_intention</code></td>
+<td>Q4 今後も使いたい</td>
+</tr>
+<tr>
+<td><code>q5_usage_frequency</code></td>
+<td>Q5 利用頻度の自己申告（1＝ほぼ使わない、2＝週1日、3＝週2〜3日、4＝週4日、5＝毎日）</td>
+</tr>
+<tr>
+<td><code>comment</code></td>
+<td>自由記述</td>
+</tr>
+</tbody>
+</table>
+<p><strong>participants（participants.csv）</strong></p>
+<table>
+<thead>
+<tr>
+<th>カラム</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>user_id</code></td>
+<td>参加者ID（U001〜U200）</td>
+</tr>
+<tr>
+<td><code>department</code></td>
+<td>所属部署</td>
+</tr>
+<tr>
+<td><code>age_group</code></td>
+<td>年代（20代〜50代）</td>
+</tr>
+<tr>
+<td><code>ai_group</code></td>
+<td>実験群（<code>AIあり</code> / <code>AIなし</code>）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>usage_logs（usage_logs.csv）</strong></p>
+<table>
+<thead>
+<tr>
+<th>カラム</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>log_id</code></td>
+<td>ログID</td>
+</tr>
+<tr>
+<td><code>user_id</code></td>
+<td>参加者ID</td>
+</tr>
+<tr>
+<td><code>event_ts</code></td>
+<td>イベント発生日時（日本時間）</td>
+</tr>
+<tr>
+<td><code>event_type</code></td>
+<td><code>login</code>＝ログイン、<code>search</code>＝検索、<code>ai_accept</code>＝AI推薦の文書を開いた（AIあり群のみ）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Step1. スキーマを作り、CSVを3つアップロードしてテーブルを作る（5–17分）</h2>
+<p><strong>ゴール：</strong> <code>workspace.genie_handson</code> に <code>survey</code>・<code>participants</code>・<code>usage_logs</code> の3テーブルができている。</p>
+<ol>
+<li>
+<p><strong>スキーマを作ります。</strong> 左のメニューから <strong>SQLエディタ</strong> を開き、SQLウェアハウス（Free Edition に1台ある Serverless のウェアハウス。名前は「Serverless Starter Warehouse」の想定）を選んで、次のSQLを実行してください。</p>
+<pre class="highlight"><code class="language-sql">CREATE SCHEMA IF NOT EXISTS workspace.genie_handson;</code></pre>
+<p>※ カタログ <code>workspace</code> は Free Edition に最初からある想定です。名前が違う場合は当日の画面に合わせてください。</p>
+</li>
+<li>
+<p>左上の <strong>「新規」→「データを追加またはアップロード」→「テーブルを作成または変更」</strong> を開きます。
+    ※ メニューの名前は当日の画面に合わせてください。</p>
+</li>
+<li><code>survey.csv</code> をドラッグ＆ドロップし、アップロード先とテーブル名を指定します。<ul>
+<li>カタログ：<code>workspace</code></li>
+<li>スキーマ：<code>genie_handson</code></li>
+<li>テーブル名：<code>survey</code></li>
+</ul>
+</li>
+<li>プレビュー画面で次を確認してから、<strong>「テーブルを作成」</strong> を押します。<ul>
+<li>1行目が列名として読み込まれていること</li>
+<li><code>q1_satisfaction</code>〜<code>q5_usage_frequency</code> が数値型になっていること</li>
+</ul>
+</li>
+<li>同じ手順で、残りの2つもアップロードします。<ul>
+<li><code>participants.csv</code> → テーブル名 <code>participants</code></li>
+<li><code>usage_logs.csv</code> → テーブル名 <code>usage_logs</code>（プレビューで <code>event_ts</code> が timestamp 型になっていることを確認）</li>
+</ul>
+</li>
+<li><strong>確認します。</strong> 配布した <code>01_check_tables.sql</code> を SQLエディタに貼り付けて実行し、件数が次のとおりになっているか確かめます。<ul>
+<li><code>survey</code> 200行／<code>participants</code> 200行／<code>usage_logs</code> 10,000行</li>
+<li><code>event_ts</code> が文字列（string）になっていた場合は、ファイル末尾のコメント部分（<code>CREATE OR REPLACE TABLE usage_logs ...</code>）のコメントを外して実行し、timestamp 型に直してください。</li>
+</ul>
+</li>
+</ol>
+<hr />
+<h2>Step2. AI Functions（ai_decide）で自由記述のポジティブ度を判定する（17–25分）</h2>
+<p><strong>ゴール：</strong> 自由記述ごとにポジティブ度（<code>positive_score</code>、0〜1）を付けた <code>survey_enriched</code> テーブルができている。</p>
+<blockquote>
+<p><strong>注意</strong>
+- <code>ai_decide</code> は Beta 版の機能です。
+- 動かない場合は自分で直そうとせず、講師の指示を待ってください（予備データに切り替えることがあります）。</p>
+</blockquote>
+<ol>
+<li>配布した <code>02_ai_decide.sql</code> を SQLエディタに貼り付けます。スキーマ名の置き換えは不要です。</li>
+<li>
+<p><strong>(1) まず3件だけ試します。</strong> 返ってくる <code>decision</code> 列の中身を確認してください。</p>
+<pre class="highlight"><code class="language-sql">SELECT
+  user_id,
+  comment,
+  ai_decide(
+    comment,
+    '{
+      "positive": {
+        "type": "noul",
+        "instructions": "このコメントは、社内ナレッジ共有ツールに対して肯定的な評価をしている",
+        "criteria": {
+          "true": "満足、便利、役立った、今後も使いたい等の肯定的な評価",
+          "false": "不満、使いにくい、役に立たない、使わなかった等の否定的な評価"
+        }
+      }
+    }'
+  ) AS decision
+FROM survey
+LIMIT 3;</code></pre>
+<p><code>response.answers.positive.probability</code> に入っている値が、「肯定的な評価である」確率（0〜1）です。</p>
+</li>
+<li>
+<p><strong>(2) 全200件を判定して保存します。</strong> ファイルの <code>CREATE OR REPLACE TABLE survey_enriched ...</code> を実行します。
+    確率の部分を <code>positive_score</code> という列に取り出して保存する処理です。</p>
+<pre class="highlight"><code class="language-sql">decision:response.answers.positive.probability::DOUBLE AS positive_score</code></pre>
+</li>
+<li>
+<p><strong>(3) 結果を確認します。</strong> ポジティブ度が高い順に並べて、判定が自分の感覚と合っているかを見てください。</p>
+</li>
+</ol>
+<blockquote>
+<p><strong>ポイント：</strong> AI の判定は確率的なので、同じコメントでも実行するたびに少し値が変わります。
+そのため、判定結果はテーブルに保存しておき、分析ではその値を使います。</p>
+<p><strong>講師から予備データを使うよう指示があった場合：</strong> <code>survey_enriched_backup.csv</code> を Step1 と同じ手順でアップロードし、テーブル名を <code>survey_enriched</code> にしてください。
+この <code>positive_score</code> は <strong>AI の判定ではなく、練習用に用意した予備の値</strong> です。</p>
+</blockquote>
+<hr />
+<h2>Step3. Genie Code と会話して Genie Agent を作る（25–37分）</h2>
+<p><strong>ゴール：</strong> 3つのテーブルと分析用の定義を設定した Genie Agent（旧 Genie スペース）ができている。</p>
+<ol>
+<li>配布した <strong><code>Genie設定メモ.pdf</code></strong> を開き、何が書いてあるかざっと確認します。</li>
+<li>画面右上の <strong>Genie Code</strong> アイコンを押してチャットを開きます。</li>
+<li>プロンプト欄の <strong>「＋」</strong> を押すか、ドラッグ＆ドロップで <code>Genie設定メモ.pdf</code> を添付します。</li>
+<li>
+<p>次のように依頼します。</p>
+<pre class="highlight"><code class="language-text">添付のメモに従って Genie agent を作成してください。
+テーブルは workspace.genie_handson.survey_enriched、
+workspace.genie_handson.participants、workspace.genie_handson.usage_logs です。</code></pre>
+</li>
+<li>
+<p>Genie Code がテーブル・説明文・質問例の案を出してきます。内容を確認し、問題がなければ作成を承認します。</p>
+</li>
+<li>作成された Genie Agent を開き、<strong>Instructions</strong> に次の定義が入っているか確認します。入っていなければ、Genie Code に追加を依頼するか、自分で書き足してください。</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>用語</th>
+<th>定義</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ポジティブ度</td>
+<td><code>positive_score</code>（0〜1、1に近いほどポジティブ）</td>
+</tr>
+<tr>
+<td>ポジティブな回答</td>
+<td><code>positive_score &gt;= 0.5</code> の回答</td>
+</tr>
+<tr>
+<td>利用日数</td>
+<td><code>login</code> があった日の数</td>
+</tr>
+<tr>
+<td>アクティブユーザ</td>
+<td>4週間の利用日数が12日以上（週平均3日以上）の人</td>
+</tr>
+<tr>
+<td>満足度</td>
+<td><code>q1_satisfaction</code> の平均</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>注意：</strong> 添付ファイルはそのチャットの中だけで有効です。新しいチャットで作り直すときは、もう一度添付してください。</p>
+</blockquote>
+<hr />
+<h2>Step4. Genie に質問して分析する（37–50分）</h2>
+<p><strong>ゴール：</strong> アンケートとログを組み合わせて、「答えたこと」と「実際の行動」のズレを見つける。</p>
+<p>上から順に質問してみましょう。<strong>回答が出たら、回答に付いている SQL（コード）の表示を開き、Genie がどんな SQL を書いたのか必ず確認してください。</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>質問例</th>
+<th>使うデータ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>①</td>
+<td>群別の満足度の平均は？</td>
+<td>アンケート＋属性</td>
+</tr>
+<tr>
+<td>②</td>
+<td>群別の週あたりログイン日数の平均は？</td>
+<td>ログ＋属性</td>
+</tr>
+<tr>
+<td>③</td>
+<td>Q5で「毎日」と答えた人のうち、実際の週平均ログイン日数が1日以下の人は何人で、何％か？</td>
+<td>アンケート＋ログ</td>
+</tr>
+<tr>
+<td>④</td>
+<td>群別のポジティブ度の平均は？</td>
+<td>アンケート（AI判定）＋属性</td>
+</tr>
+<tr>
+<td>⑤</td>
+<td>ポジティブ度と ai_accept の回数には関係があるか？</td>
+<td>アンケート（AI判定）＋ログ</td>
+</tr>
+<tr>
+<td>⑥</td>
+<td>アクティブユーザは何人？</td>
+<td>ログ</td>
+</tr>
+</tbody>
+</table>
+<p><strong>早く終わった人は：</strong></p>
+<ul>
+<li>部署別・年代別に同じ分析をしてみる</li>
+<li>自分で問いを立てて質問してみる（例：「満足度は高いのに利用日数が少ない人の特徴は？」）</li>
+<li>質問の書き方を変えると、Genie の SQL がどう変わるかを比べてみる</li>
+</ul>
+<hr />
+<h2>まとめ（50–60分）</h2>
+<ol>
+<li><strong>Genie が書いた SQL は必ず確認しましょう。</strong> 自然言語の質問は解釈の幅があります。「週あたり」「毎日」をどう計算したか、結合の仕方は正しいかを自分の目で確かめてください。</li>
+<li><strong>記述統計は Genie で、検定はノートブックで確定しましょう。</strong> 平均・分布・群間の差を探るのは Genie が得意です。t検定や効果量などの推論統計は、ノートブック（Python）で検算してから結論にしてください。</li>
+<li><strong>自分の研究に応用できます。</strong> 「アンケート（自己申告）＋ログ（実際の行動）」の組み合わせは、ユーザ実験・教育・HCI・組織研究などで広く使えます。Free Edition は授業後もそのまま使えるので、続きを試してみてください。</li>
+<li><strong>実データを持ち込む前に確認しましょう。</strong> 自分の研究データを使う場合は、倫理審査で認められた範囲か、個人情報が含まれていないか、事前に確認してください。</li>
+</ol>
+</body>
+</html>
