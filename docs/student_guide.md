@@ -131,85 +131,71 @@ R&D 部門が知りたいこと：
 
 ---
 
-## Step2. AI Functions（ai_decide）で自由記述のポジティブ度を判定する（17–25分）
+## Step2. AI Functions（ai_analyze_sentiment）で自由記述の感情を判定する（17–25分）
 
-**ゴール：** 自由記述ごとにポジティブ度（`positive_score`、0〜1）を付けた `survey_enriched` テーブルができている。
+**ゴール：** 自由記述ごとに感情のラベル（`sentiment`）を付けた `survey_enriched` テーブルができている。
+
+`ai_analyze_sentiment` は、文章を読んで次の4つのどれかを返す AI Functions です。
+
+| ラベル | 意味 |
+|---|---|
+| `positive` | 肯定的 |
+| `negative` | 否定的 |
+| `neutral` | どちらでもない |
+| `mixed` | 肯定と否定が混ざっている |
 
 > **注意**
 >
-> - `ai_decide` は Beta 版の機能です。
+> - 感情を判定できなかったコメントは `NULL` になります。
 > - 動かない場合は自分で直そうとせず、講師の指示を待ってください（予備データに切り替えることがあります）。
 
 次の3つのSQLを、上から順に1つずつSQLエディタにコピーして実行します。
 
-1. **まず3件だけ試します。** 返ってくる `decision` 列の中身を確認してください。
+1. **まず3件だけ試します。** 返ってくる `sentiment` 列の中身を確認してください。
 
     ```sql
     SELECT
       user_id,
       comment,
-      ai_decide(
-        comment,
-        '{
-          "positive": {
-            "type": "noul",
-            "instructions": "このコメントは、社内ナレッジ共有ツールに対して肯定的な評価をしている",
-            "criteria": {
-              "true": "満足、便利、役立った、今後も使いたい等の肯定的な評価",
-              "false": "不満、使いにくい、役に立たない、使わなかった等の否定的な評価"
-            }
-          }
-        }'
-      ) AS decision
+      ai_analyze_sentiment(comment) AS sentiment
     FROM workspace.genie_handson.survey
     LIMIT 3;
     ```
 
-    `response.answers.positive.probability` に入っている値が、「肯定的な評価である」確率（0〜1）です。
-
-2. **全200件を判定して保存します。** 確率の部分を `positive_score` という列に取り出し、`survey_enriched` テーブルとして保存します。
+2. **全200件を判定して保存します。** 判定結果を `sentiment` 列として、`survey_enriched` テーブルに保存します。
 
     ```sql
     CREATE OR REPLACE TABLE workspace.genie_handson.survey_enriched
-    COMMENT '事後アンケート＋自由記述のポジティブ度（ai_decide で判定）'
+    COMMENT '事後アンケート＋自由記述の感情ラベル（ai_analyze_sentiment で判定）'
     AS
-    WITH judged AS (
-      SELECT
-        *,
-        ai_decide(
-          comment,
-          '{
-            "positive": {
-              "type": "noul",
-              "instructions": "このコメントは、社内ナレッジ共有ツールに対して肯定的な評価をしている",
-              "criteria": {
-                "true": "満足、便利、役立った、今後も使いたい等の肯定的な評価",
-                "false": "不満、使いにくい、役に立たない、使わなかった等の否定的な評価"
-              }
-            }
-          }'
-        ) AS decision
-      FROM workspace.genie_handson.survey
-    )
     SELECT
-      * EXCEPT (decision),
-      decision:response.answers.positive.probability::DOUBLE AS positive_score
-    FROM judged;
+      *,
+      ai_analyze_sentiment(comment) AS sentiment
+    FROM workspace.genie_handson.survey;
     ```
 
-3. **結果を確認します。** ポジティブ度が高い順に並べて、判定が自分の感覚と合っているかを見てください。
+3. **結果を確認します。** ラベルごとの件数を数え、いくつかのコメントを読んで、判定が自分の感覚と合っているかを見てください。
 
     ```sql
-    SELECT ROUND(positive_score, 2) AS positive_score, comment
+    SELECT sentiment, COUNT(*) AS n
     FROM workspace.genie_handson.survey_enriched
-    ORDER BY positive_score DESC;
+    GROUP BY sentiment
+    ORDER BY n DESC;
     ```
 
-> **ポイント：** AI の判定は確率的なので、同じコメントでも実行するたびに少し値が変わります。
+    ```sql
+    SELECT sentiment, comment
+    FROM workspace.genie_handson.survey_enriched
+    ORDER BY sentiment
+    LIMIT 20;
+    ```
+
+> **ポイント：** AI の判定は、実行するたびに結果が変わることがあります。
 > そのため、判定結果はテーブルに保存しておき、分析ではその値を使います。
+> また、`mixed` と `neutral` の境目のように、人が読んでも迷うコメントは AI の判定も揺れやすくなります。
 
 > **講師から予備データを使うよう指示があった場合：** `survey_enriched_backup.csv` を Step1 と同じ手順でアップロードし、テーブル名を `survey_enriched` にしてください。
-> この `positive_score` は **AI の判定ではなく、練習用に用意した予備の値** です。
+> この `sentiment` は **AI の判定ではなく、練習用に用意した予備の値** です。
 
 ---
 
@@ -233,8 +219,8 @@ R&D 部門が知りたいこと：
 
 | 用語 | 定義 |
 |---|---|
-| ポジティブ度 | `positive_score`（0〜1、1に近いほどポジティブ） |
-| ポジティブな回答 | `positive_score >= 0.5` の回答 |
+| 感情ラベル | `sentiment`（`positive`／`negative`／`neutral`／`mixed`） |
+| ポジティブ率 | `sentiment = 'positive'` の人の割合（`sentiment` が `NULL` の人は分母から除く） |
 | 利用日数 | `login` があった日の数 |
 | アクティブユーザ | 4週間の利用日数が12日以上（週平均3日以上）の人 |
 | 満足度 | `q1_satisfaction` の平均 |
@@ -254,8 +240,8 @@ R&D 部門が知りたいこと：
 | ① | 群別の満足度の平均は？ | アンケート＋属性 |
 | ② | 群別の週あたりログイン日数の平均は？ | ログ＋属性 |
 | ③ | Q5で「毎日」と答えた人のうち、実際の週平均ログイン日数が1日以下の人は何人で、何％か？ | アンケート＋ログ |
-| ④ | 群別のポジティブ度の平均は？ | アンケート（AI判定）＋属性 |
-| ⑤ | ポジティブ度と ai_accept の回数には関係があるか？ | アンケート（AI判定）＋ログ |
+| ④ | 群別のポジティブ率は？ | アンケート（AI判定）＋属性 |
+| ⑤ | 感情ラベルごとに、1人あたりの ai_accept の回数の平均は？ | アンケート（AI判定）＋ログ |
 | ⑥ | アクティブユーザは何人？ | ログ |
 
 **早く終わった人は：**

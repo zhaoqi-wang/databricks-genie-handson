@@ -253,79 +253,81 @@ FROM workspace.genie_handson.usage_logs;</code></pre>
 </li>
 </ol>
 <hr />
-<h2>Step2. AI Functions（ai_decide）で自由記述のポジティブ度を判定する（17–25分）</h2>
-<p><strong>ゴール：</strong> 自由記述ごとにポジティブ度（<code>positive_score</code>、0〜1）を付けた <code>survey_enriched</code> テーブルができている。</p>
+<h2>Step2. AI Functions（ai_analyze_sentiment）で自由記述の感情を判定する（17–25分）</h2>
+<p><strong>ゴール：</strong> 自由記述ごとに感情のラベル（<code>sentiment</code>）を付けた <code>survey_enriched</code> テーブルができている。</p>
+<p><code>ai_analyze_sentiment</code> は、文章を読んで次の4つのどれかを返す AI Functions です。</p>
+<table>
+<thead>
+<tr>
+<th>ラベル</th>
+<th>意味</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>positive</code></td>
+<td>肯定的</td>
+</tr>
+<tr>
+<td><code>negative</code></td>
+<td>否定的</td>
+</tr>
+<tr>
+<td><code>neutral</code></td>
+<td>どちらでもない</td>
+</tr>
+<tr>
+<td><code>mixed</code></td>
+<td>肯定と否定が混ざっている</td>
+</tr>
+</tbody>
+</table>
 <blockquote>
 <p><strong>注意</strong></p>
 <ul>
-<li><code>ai_decide</code> は Beta 版の機能です。</li>
+<li>感情を判定できなかったコメントは <code>NULL</code> になります。</li>
 <li>動かない場合は自分で直そうとせず、講師の指示を待ってください（予備データに切り替えることがあります）。</li>
 </ul>
 </blockquote>
 <p>次の3つのSQLを、上から順に1つずつSQLエディタにコピーして実行します。</p>
 <ol>
 <li>
-<p><strong>まず3件だけ試します。</strong> 返ってくる <code>decision</code> 列の中身を確認してください。</p>
+<p><strong>まず3件だけ試します。</strong> 返ってくる <code>sentiment</code> 列の中身を確認してください。</p>
 <pre class="highlight"><code class="language-sql">SELECT
   user_id,
   comment,
-  ai_decide(
-    comment,
-    '{
-      "positive": {
-        "type": "noul",
-        "instructions": "このコメントは、社内ナレッジ共有ツールに対して肯定的な評価をしている",
-        "criteria": {
-          "true": "満足、便利、役立った、今後も使いたい等の肯定的な評価",
-          "false": "不満、使いにくい、役に立たない、使わなかった等の否定的な評価"
-        }
-      }
-    }'
-  ) AS decision
+  ai_analyze_sentiment(comment) AS sentiment
 FROM workspace.genie_handson.survey
 LIMIT 3;</code></pre>
-<p><code>response.answers.positive.probability</code> に入っている値が、「肯定的な評価である」確率（0〜1）です。</p>
 </li>
 <li>
-<p><strong>全200件を判定して保存します。</strong> 確率の部分を <code>positive_score</code> という列に取り出し、<code>survey_enriched</code> テーブルとして保存します。</p>
+<p><strong>全200件を判定して保存します。</strong> 判定結果を <code>sentiment</code> 列として、<code>survey_enriched</code> テーブルに保存します。</p>
 <pre class="highlight"><code class="language-sql">CREATE OR REPLACE TABLE workspace.genie_handson.survey_enriched
-COMMENT '事後アンケート＋自由記述のポジティブ度（ai_decide で判定）'
+COMMENT '事後アンケート＋自由記述の感情ラベル（ai_analyze_sentiment で判定）'
 AS
-WITH judged AS (
-  SELECT
-    *,
-    ai_decide(
-      comment,
-      '{
-        "positive": {
-          "type": "noul",
-          "instructions": "このコメントは、社内ナレッジ共有ツールに対して肯定的な評価をしている",
-          "criteria": {
-            "true": "満足、便利、役立った、今後も使いたい等の肯定的な評価",
-            "false": "不満、使いにくい、役に立たない、使わなかった等の否定的な評価"
-          }
-        }
-      }'
-    ) AS decision
-  FROM workspace.genie_handson.survey
-)
 SELECT
-  * EXCEPT (decision),
-  decision:response.answers.positive.probability::DOUBLE AS positive_score
-FROM judged;</code></pre>
+  *,
+  ai_analyze_sentiment(comment) AS sentiment
+FROM workspace.genie_handson.survey;</code></pre>
 </li>
 <li>
-<p><strong>結果を確認します。</strong> ポジティブ度が高い順に並べて、判定が自分の感覚と合っているかを見てください。</p>
-<pre class="highlight"><code class="language-sql">SELECT ROUND(positive_score, 2) AS positive_score, comment
+<p><strong>結果を確認します。</strong> ラベルごとの件数を数え、いくつかのコメントを読んで、判定が自分の感覚と合っているかを見てください。</p>
+<pre class="highlight"><code class="language-sql">SELECT sentiment, COUNT(*) AS n
 FROM workspace.genie_handson.survey_enriched
-ORDER BY positive_score DESC;</code></pre>
+GROUP BY sentiment
+ORDER BY n DESC;</code></pre>
+<pre class="highlight"><code class="language-sql">SELECT sentiment, comment
+FROM workspace.genie_handson.survey_enriched
+ORDER BY sentiment
+LIMIT 20;</code></pre>
 </li>
 </ol>
 <blockquote>
-<p><strong>ポイント：</strong> AI の判定は確率的なので、同じコメントでも実行するたびに少し値が変わります。
-そのため、判定結果はテーブルに保存しておき、分析ではその値を使います。</p>
+<p><strong>ポイント：</strong> AI の判定は、実行するたびに結果が変わることがあります。
+そのため、判定結果はテーブルに保存しておき、分析ではその値を使います。
+また、<code>mixed</code> と <code>neutral</code> の境目のように、人が読んでも迷うコメントは AI の判定も揺れやすくなります。</p>
 <p><strong>講師から予備データを使うよう指示があった場合：</strong> <code>survey_enriched_backup.csv</code> を Step1 と同じ手順でアップロードし、テーブル名を <code>survey_enriched</code> にしてください。
-この <code>positive_score</code> は <strong>AI の判定ではなく、練習用に用意した予備の値</strong> です。</p>
+この <code>sentiment</code> は <strong>AI の判定ではなく、練習用に用意した予備の値</strong> です。</p>
 </blockquote>
 <hr />
 <h2>Step3. Genie Code と会話して Genie Agent を作る（25–37分）</h2>
@@ -354,12 +356,12 @@ workspace.genie_handson.participants、workspace.genie_handson.usage_logs です
 </thead>
 <tbody>
 <tr>
-<td>ポジティブ度</td>
-<td><code>positive_score</code>（0〜1、1に近いほどポジティブ）</td>
+<td>感情ラベル</td>
+<td><code>sentiment</code>（<code>positive</code>／<code>negative</code>／<code>neutral</code>／<code>mixed</code>）</td>
 </tr>
 <tr>
-<td>ポジティブな回答</td>
-<td><code>positive_score &gt;= 0.5</code> の回答</td>
+<td>ポジティブ率</td>
+<td><code>sentiment = 'positive'</code> の人の割合（<code>sentiment</code> が <code>NULL</code> の人は分母から除く）</td>
 </tr>
 <tr>
 <td>利用日数</td>
@@ -408,12 +410,12 @@ workspace.genie_handson.participants、workspace.genie_handson.usage_logs です
 </tr>
 <tr>
 <td>④</td>
-<td>群別のポジティブ度の平均は？</td>
+<td>群別のポジティブ率は？</td>
 <td>アンケート（AI判定）＋属性</td>
 </tr>
 <tr>
 <td>⑤</td>
-<td>ポジティブ度と ai_accept の回数には関係があるか？</td>
+<td>感情ラベルごとに、1人あたりの ai_accept の回数の平均は？</td>
 <td>アンケート（AI判定）＋ログ</td>
 </tr>
 <tr>
