@@ -58,14 +58,6 @@ hr { border: none; border-top: 1px solid #ddd; margin: 2rem 0; }
 <td>Step1 でアップロード（操作ログ）</td>
 </tr>
 <tr>
-<td><code>01_check_tables.sql</code></td>
-<td>Step1 の確認用SQL</td>
-</tr>
-<tr>
-<td><code>02_ai_decide.sql</code></td>
-<td>Step2 で実行するSQL</td>
-</tr>
-<tr>
 <td><code>Genie設定メモ.pdf</code></td>
 <td>Step3 で Genie Code に添付するメモ</td>
 </tr>
@@ -245,24 +237,35 @@ hr { border: none; border-top: 1px solid #ddd; margin: 2rem 0; }
 <li><code>usage_logs.csv</code> → テーブル名 <code>usage_logs</code>（プレビューで <code>event_ts</code> が timestamp 型になっていることを確認）</li>
 </ul>
 </li>
-<li><strong>確認します。</strong> 配布した <code>01_check_tables.sql</code> を SQLエディタに貼り付けて実行し、件数が次のとおりになっているか確かめます。<ul>
-<li><code>survey</code> 200行／<code>participants</code> 200行／<code>usage_logs</code> 10,000行</li>
-<li><code>event_ts</code> が文字列（string）になっていた場合は、ファイル末尾のコメント部分（<code>CREATE OR REPLACE TABLE usage_logs ...</code>）のコメントを外して実行し、timestamp 型に直してください。</li>
-</ul>
+<li>
+<p><strong>件数を確認します。</strong> 次のSQLをSQLエディタにコピーして実行し、<code>survey</code> 200行／<code>participants</code> 200行／<code>usage_logs</code> 10,000行になっているか確かめます。</p>
+<pre class="highlight"><code class="language-sql">SELECT 'survey' AS table_name, COUNT(*) AS n FROM workspace.genie_handson.survey
+UNION ALL SELECT 'participants', COUNT(*) FROM workspace.genie_handson.participants
+UNION ALL SELECT 'usage_logs',   COUNT(*) FROM workspace.genie_handson.usage_logs;</code></pre>
+</li>
+<li>
+<p><strong>型を確認します。</strong> 次のSQLを実行し、<code>event_ts</code> の型が <code>timestamp</code> になっているか見ます。</p>
+<pre class="highlight"><code class="language-sql">DESCRIBE workspace.genie_handson.usage_logs;</code></pre>
+<p><code>event_ts</code> が <code>string</code> になっていた場合だけ、次のSQLを実行して <code>timestamp</code> に直してください。</p>
+<pre class="highlight"><code class="language-sql">CREATE OR REPLACE TABLE workspace.genie_handson.usage_logs AS
+SELECT log_id, user_id, CAST(event_ts AS TIMESTAMP) AS event_ts, event_type
+FROM workspace.genie_handson.usage_logs;</code></pre>
 </li>
 </ol>
 <hr />
 <h2>Step2. AI Functions（ai_decide）で自由記述のポジティブ度を判定する（17–25分）</h2>
 <p><strong>ゴール：</strong> 自由記述ごとにポジティブ度（<code>positive_score</code>、0〜1）を付けた <code>survey_enriched</code> テーブルができている。</p>
 <blockquote>
-<p><strong>注意</strong>
-- <code>ai_decide</code> は Beta 版の機能です。
-- 動かない場合は自分で直そうとせず、講師の指示を待ってください（予備データに切り替えることがあります）。</p>
+<p><strong>注意</strong></p>
+<ul>
+<li><code>ai_decide</code> は Beta 版の機能です。</li>
+<li>動かない場合は自分で直そうとせず、講師の指示を待ってください（予備データに切り替えることがあります）。</li>
+</ul>
 </blockquote>
+<p>次の3つのSQLを、上から順に1つずつSQLエディタにコピーして実行します。</p>
 <ol>
-<li>配布した <code>02_ai_decide.sql</code> を SQLエディタに貼り付けます。スキーマ名の置き換えは不要です。</li>
 <li>
-<p><strong>(1) まず3件だけ試します。</strong> 返ってくる <code>decision</code> 列の中身を確認してください。</p>
+<p><strong>まず3件だけ試します。</strong> 返ってくる <code>decision</code> 列の中身を確認してください。</p>
 <pre class="highlight"><code class="language-sql">SELECT
   user_id,
   comment,
@@ -279,17 +282,43 @@ hr { border: none; border-top: 1px solid #ddd; margin: 2rem 0; }
       }
     }'
   ) AS decision
-FROM survey
+FROM workspace.genie_handson.survey
 LIMIT 3;</code></pre>
 <p><code>response.answers.positive.probability</code> に入っている値が、「肯定的な評価である」確率（0〜1）です。</p>
 </li>
 <li>
-<p><strong>(2) 全200件を判定して保存します。</strong> ファイルの <code>CREATE OR REPLACE TABLE survey_enriched ...</code> を実行します。
-    確率の部分を <code>positive_score</code> という列に取り出して保存する処理です。</p>
-<pre class="highlight"><code class="language-sql">decision:response.answers.positive.probability::DOUBLE AS positive_score</code></pre>
+<p><strong>全200件を判定して保存します。</strong> 確率の部分を <code>positive_score</code> という列に取り出し、<code>survey_enriched</code> テーブルとして保存します。</p>
+<pre class="highlight"><code class="language-sql">CREATE OR REPLACE TABLE workspace.genie_handson.survey_enriched
+COMMENT '事後アンケート＋自由記述のポジティブ度（ai_decide で判定）'
+AS
+WITH judged AS (
+  SELECT
+    *,
+    ai_decide(
+      comment,
+      '{
+        "positive": {
+          "type": "noul",
+          "instructions": "このコメントは、社内ナレッジ共有ツールに対して肯定的な評価をしている",
+          "criteria": {
+            "true": "満足、便利、役立った、今後も使いたい等の肯定的な評価",
+            "false": "不満、使いにくい、役に立たない、使わなかった等の否定的な評価"
+          }
+        }
+      }'
+    ) AS decision
+  FROM workspace.genie_handson.survey
+)
+SELECT
+  * EXCEPT (decision),
+  decision:response.answers.positive.probability::DOUBLE AS positive_score
+FROM judged;</code></pre>
 </li>
 <li>
-<p><strong>(3) 結果を確認します。</strong> ポジティブ度が高い順に並べて、判定が自分の感覚と合っているかを見てください。</p>
+<p><strong>結果を確認します。</strong> ポジティブ度が高い順に並べて、判定が自分の感覚と合っているかを見てください。</p>
+<pre class="highlight"><code class="language-sql">SELECT ROUND(positive_score, 2) AS positive_score, comment
+FROM workspace.genie_handson.survey_enriched
+ORDER BY positive_score DESC;</code></pre>
 </li>
 </ol>
 <blockquote>
@@ -408,5 +437,38 @@ workspace.genie_handson.participants、workspace.genie_handson.usage_logs です
 <li><strong>自分の研究に応用できます。</strong> 「アンケート（自己申告）＋ログ（実際の行動）」の組み合わせは、ユーザ実験・教育・HCI・組織研究などで広く使えます。Free Edition は授業後もそのまま使えるので、続きを試してみてください。</li>
 <li><strong>実データを持ち込む前に確認しましょう。</strong> 自分の研究データを使う場合は、倫理審査で認められた範囲か、個人情報が含まれていないか、事前に確認してください。</li>
 </ol>
+<style>
+pre { position: relative; }
+.copy-btn { position: absolute; top: .4rem; right: .4rem; font-size: .8rem; padding: .15rem .6rem;
+            border: 1px solid #bbb; border-radius: 4px; background: #fff; cursor: pointer; }
+.copy-btn:hover { background: #f0f0f0; }
+@media print { .copy-btn { display: none; } }
+</style>
+<script>
+document.querySelectorAll("pre").forEach(function (pre) {
+  var btn = document.createElement("button");
+  btn.className = "copy-btn";
+  btn.textContent = "コピー";
+  btn.addEventListener("click", function () {
+    var text = pre.querySelector("code").innerText;
+    var done = function () {
+      btn.textContent = "コピーしました";
+      setTimeout(function () { btn.textContent = "コピー"; }, 1500);
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done);
+    } else {  // file:// などで Clipboard API が使えないブラウザ向け
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      done();
+    }
+  });
+  pre.appendChild(btn);
+});
+</script>
 </body>
 </html>

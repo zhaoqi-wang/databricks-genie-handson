@@ -17,6 +17,8 @@
 - [docs/student_guide.md](docs/student_guide.md)（GitHub 上でそのまま読めます）
 - `docs/student_guide.html`（ダウンロード後にブラウザで開くと印刷しやすい版）
 
+実行するSQLはすべて手順書の中にあります。コードブロック右上のコピーボタンでコピーし、SQLエディタに貼り付けて実行してください。
+
 ## ファイル一覧
 
 | ファイル | 使う場面 |
@@ -24,8 +26,6 @@
 | `data/survey.csv` | Step1 でアップロード（事後アンケート、200行） |
 | `data/participants.csv` | Step1 でアップロード（参加者の属性、200行） |
 | `data/usage_logs.csv` | Step1 でアップロード（操作ログ、10,000行） |
-| `sql/01_check_tables.sql` | Step1 の確認用SQL |
-| `sql/02_ai_decide.sql` | Step2 で実行するSQL（自由記述のポジティブ度判定） |
 | `memo/Genie設定メモ.pdf` | Step3 で Genie Code に添付するメモ |
 | `memo/Genie設定メモ.docx` | 上記メモの編集用の元ファイル |
 | `data/backup/survey_enriched_backup.csv` | 予備データ。**講師から指示があったときだけ使う**（`positive_score` は AI の判定ではない予備の値） |

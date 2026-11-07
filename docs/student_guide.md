@@ -20,8 +20,6 @@
 | `survey.csv` | Step1 でアップロード（事後アンケート） |
 | `participants.csv` | Step1 でアップロード（参加者の属性） |
 | `usage_logs.csv` | Step1 でアップロード（操作ログ） |
-| `01_check_tables.sql` | Step1 の確認用SQL |
-| `02_ai_decide.sql` | Step2 で実行するSQL |
 | `Genie設定メモ.pdf` | Step3 で Genie Code に添付するメモ |
 | `Genie設定メモ.docx` | メモの編集用の元ファイル（任意） |
 | `survey_enriched_backup.csv` | 予備データ（講師から指示があったときだけ使う） |
@@ -109,9 +107,27 @@ R&D 部門が知りたいこと：
 5. 同じ手順で、残りの2つもアップロードします。
     - `participants.csv` → テーブル名 `participants`
     - `usage_logs.csv` → テーブル名 `usage_logs`（プレビューで `event_ts` が timestamp 型になっていることを確認）
-6. **確認します。** 配布した `01_check_tables.sql` を SQLエディタに貼り付けて実行し、件数が次のとおりになっているか確かめます。
-    - `survey` 200行／`participants` 200行／`usage_logs` 10,000行
-    - `event_ts` が文字列（string）になっていた場合は、ファイル末尾のコメント部分（`CREATE OR REPLACE TABLE usage_logs ...`）のコメントを外して実行し、timestamp 型に直してください。
+6. **件数を確認します。** 次のSQLをSQLエディタにコピーして実行し、`survey` 200行／`participants` 200行／`usage_logs` 10,000行になっているか確かめます。
+
+    ```sql
+    SELECT 'survey' AS table_name, COUNT(*) AS n FROM workspace.genie_handson.survey
+    UNION ALL SELECT 'participants', COUNT(*) FROM workspace.genie_handson.participants
+    UNION ALL SELECT 'usage_logs',   COUNT(*) FROM workspace.genie_handson.usage_logs;
+    ```
+
+7. **型を確認します。** 次のSQLを実行し、`event_ts` の型が `timestamp` になっているか見ます。
+
+    ```sql
+    DESCRIBE workspace.genie_handson.usage_logs;
+    ```
+
+    `event_ts` が `string` になっていた場合だけ、次のSQLを実行して `timestamp` に直してください。
+
+    ```sql
+    CREATE OR REPLACE TABLE workspace.genie_handson.usage_logs AS
+    SELECT log_id, user_id, CAST(event_ts AS TIMESTAMP) AS event_ts, event_type
+    FROM workspace.genie_handson.usage_logs;
+    ```
 
 ---
 
@@ -120,11 +136,13 @@ R&D 部門が知りたいこと：
 **ゴール：** 自由記述ごとにポジティブ度（`positive_score`、0〜1）を付けた `survey_enriched` テーブルができている。
 
 > **注意**
+>
 > - `ai_decide` は Beta 版の機能です。
 > - 動かない場合は自分で直そうとせず、講師の指示を待ってください（予備データに切り替えることがあります）。
 
-1. 配布した `02_ai_decide.sql` を SQLエディタに貼り付けます。スキーマ名の置き換えは不要です。
-2. **(1) まず3件だけ試します。** 返ってくる `decision` 列の中身を確認してください。
+次の3つのSQLを、上から順に1つずつSQLエディタにコピーして実行します。
+
+1. **まず3件だけ試します。** 返ってくる `decision` 列の中身を確認してください。
 
     ```sql
     SELECT
@@ -143,20 +161,49 @@ R&D 部門が知りたいこと：
           }
         }'
       ) AS decision
-    FROM survey
+    FROM workspace.genie_handson.survey
     LIMIT 3;
     ```
 
     `response.answers.positive.probability` に入っている値が、「肯定的な評価である」確率（0〜1）です。
 
-3. **(2) 全200件を判定して保存します。** ファイルの `CREATE OR REPLACE TABLE survey_enriched ...` を実行します。
-    確率の部分を `positive_score` という列に取り出して保存する処理です。
+2. **全200件を判定して保存します。** 確率の部分を `positive_score` という列に取り出し、`survey_enriched` テーブルとして保存します。
 
     ```sql
-    decision:response.answers.positive.probability::DOUBLE AS positive_score
+    CREATE OR REPLACE TABLE workspace.genie_handson.survey_enriched
+    COMMENT '事後アンケート＋自由記述のポジティブ度（ai_decide で判定）'
+    AS
+    WITH judged AS (
+      SELECT
+        *,
+        ai_decide(
+          comment,
+          '{
+            "positive": {
+              "type": "noul",
+              "instructions": "このコメントは、社内ナレッジ共有ツールに対して肯定的な評価をしている",
+              "criteria": {
+                "true": "満足、便利、役立った、今後も使いたい等の肯定的な評価",
+                "false": "不満、使いにくい、役に立たない、使わなかった等の否定的な評価"
+              }
+            }
+          }'
+        ) AS decision
+      FROM workspace.genie_handson.survey
+    )
+    SELECT
+      * EXCEPT (decision),
+      decision:response.answers.positive.probability::DOUBLE AS positive_score
+    FROM judged;
     ```
 
-4. **(3) 結果を確認します。** ポジティブ度が高い順に並べて、判定が自分の感覚と合っているかを見てください。
+3. **結果を確認します。** ポジティブ度が高い順に並べて、判定が自分の感覚と合っているかを見てください。
+
+    ```sql
+    SELECT ROUND(positive_score, 2) AS positive_score, comment
+    FROM workspace.genie_handson.survey_enriched
+    ORDER BY positive_score DESC;
+    ```
 
 > **ポイント：** AI の判定は確率的なので、同じコメントでも実行するたびに少し値が変わります。
 > そのため、判定結果はテーブルに保存しておき、分析ではその値を使います。
