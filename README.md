@@ -28,4 +28,3 @@
 | `data/usage_logs.csv` | Step1 でアップロード（操作ログ、10,000行） |
 | `memo/Genie設定メモ.pdf` | Step3 で Genie Code に添付するメモ |
 | `memo/Genie設定メモ.docx` | 上記メモの編集用の元ファイル |
-| `data/backup/survey_enriched_backup.csv` | 予備データ。**講師から指示があったときだけ使う**（`sentiment` は AI の判定ではない予備の値） |

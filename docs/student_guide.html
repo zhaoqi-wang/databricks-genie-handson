@@ -65,10 +65,6 @@ hr { border: none; border-top: 1px solid #ddd; margin: 2rem 0; }
 <td><code>Genie設定メモ.docx</code></td>
 <td>メモの編集用の元ファイル（任意）</td>
 </tr>
-<tr>
-<td><code>survey_enriched_backup.csv</code></td>
-<td>予備データ（講師から指示があったときだけ使う）</td>
-</tr>
 </tbody>
 </table>
 <hr />
@@ -286,7 +282,7 @@ FROM workspace.genie_handson.usage_logs;</code></pre>
 <p><strong>注意</strong></p>
 <ul>
 <li>感情を判定できなかったコメントは <code>NULL</code> になります。</li>
-<li>動かない場合は自分で直そうとせず、講師の指示を待ってください（予備データに切り替えることがあります）。</li>
+<li>動かない場合は自分で直そうとせず、講師の指示を待ってください。</li>
 </ul>
 </blockquote>
 <p>次の3つのSQLを、上から順に1つずつSQLエディタにコピーして実行します。</p>
